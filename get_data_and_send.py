@@ -20,8 +20,7 @@ SENDER_PASSWORD = (os.getenv("SENDER_PASSWORD") or input("Email password/App Pas
 raw_receivers = (os.getenv("RECIPIENT_EMAILS") or input("Recipient emails (comma separated): "))
 RECIPIENT_EMAILS = [r.strip() for r in raw_receivers.split(",") if r.strip()]
 
-print("DEBUG EMAIL:", repr(SENDER_EMAIL))
-print("DEBUG PASS :", repr(SENDER_PASSWORD))
+
 
 
 
