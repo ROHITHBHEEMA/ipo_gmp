@@ -13,16 +13,16 @@ from typing import Dict, List, Optional
 
 URL_TO_SCRAPE = "https://ipocentral.in/ipo-discussion/"
 
-# Uncomment these when you’re ready to send email again
+# Will use env vars if present (for GitHub Actions),
+# otherwise ask interactively (for local testing)
 SENDER_EMAIL = (os.getenv("SENDER_EMAIL") or input("Sender email: ")).strip()
 SENDER_PASSWORD = (os.getenv("SENDER_PASSWORD") or input("Email password/App Password: ")).strip()
 
-raw_receivers = (os.getenv("RECIPIENT_EMAILS") or input("Recipient emails (comma separated): "))
+raw_receivers = (
+    os.getenv("RECIPIENT_EMAILS")
+    or input("Recipient emails (comma separated): ")
+)
 RECIPIENT_EMAILS = [r.strip() for r in raw_receivers.split(",") if r.strip()]
-
-
-
-
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
@@ -112,55 +112,88 @@ def scrape_site() -> str:
     if response.status_code == 403:
         print("Got 403 Forbidden from the server.")
         return (
-            "Scraping blocked by the website (HTTP 403 Forbidden). "
-            "They may be blocking bots / scripts."
+            "<p>Scraping blocked by the website (HTTP 403 Forbidden). "
+            "They may be blocking bots / scripts.</p>"
         )
 
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Grab ALL table rows on the page
-    rows = soup.find_all("tr")
+    # Grab ALL table rows on the page from any table
+    rows = soup.select("table tr")
 
     # Parse into structured sections
     sections = parse_gmp_rows(rows)
 
     if not sections:
-        return "No GMP table data could be parsed from the page."
+        return "<p>No GMP table data could be parsed from the page.</p>"
 
-    # Build a human-readable text summary for email / console
-    lines: List[str] = []
-    lines.append("IPO GMP Summary from IPO Central")
-    lines.append(URL_TO_SCRAPE)
-    lines.append("")
+    # Build an HTML body with tables
+    html: List[str] = []
+    html.append("<html><body>")
+    html.append("<h2>IPO GMP Summary</h2>")
+    html.append(
+        f"<p>Source: <a href='{URL_TO_SCRAPE}'>{URL_TO_SCRAPE}</a></p>"
+    )
 
     for section_name, ipos in sections.items():
-        lines.append(f"{section_name}:")
-        if not ipos:
-            lines.append("  (no rows)")
-        for ipo in ipos:
-            lines.append(
-                f"- {ipo['name']} {ipo['window']}: "
-                f"Price {ipo['price']}, GMP {ipo['gmp']} "
-                f"({ipo['gmp_percent']}%), Subject to {ipo['subject_to']}"
-            )
-        lines.append("")  # blank line between sections
+        html.append(f"<h3>{section_name}</h3>")
 
-    return "\n".join(lines)
+        if not ipos:
+            html.append("<p>No rows</p>")
+            continue
+
+        # Table header
+        html.append("""
+        <table border="1" cellpadding="6" cellspacing="0"
+               style="border-collapse: collapse; font-family: Arial, sans-serif; font-size: 14px;">
+            <tr style="background-color:#f2f2f2; font-weight:bold;">
+                <th>IPO Name</th>
+                <th>Bidding Window</th>
+                <th>Price</th>
+                <th>GMP</th>
+                <th>GMP %</th>
+                <th>Subject To</th>
+            </tr>
+        """)
+
+        # Table rows
+        for ipo in ipos:
+            html.append(f"""
+            <tr>
+                <td>{ipo['name']}</td>
+                <td>{ipo['window']}</td>
+                <td>{ipo['price']}</td>
+                <td>{ipo['gmp']}</td>
+                <td>{ipo['gmp_percent']}</td>
+                <td>{ipo['subject_to']}</td>
+            </tr>
+            """)
+
+        html.append("</table><br/>")
+
+    html.append("</body></html>")
+
+    return "\n".join(html)
 
 
 # -------------------------------------------------------
 # EMAIL SENDER
 # -------------------------------------------------------
 
-def send_email(subject: str, body: str):
-    msg = MIMEMultipart()
+def send_email(subject: str, body_html: str):
+    msg = MIMEMultipart("alternative")
     msg["From"] = SENDER_EMAIL
     msg["To"] = ", ".join(RECIPIENT_EMAILS)
     msg["Subject"] = subject
 
-    msg.attach(MIMEText(body, "plain"))
+    # Optional: plain-text fallback (very simple)
+    plain_fallback = "Your email client does not support HTML. Please open in a modern email app."
+    msg.attach(MIMEText(plain_fallback, "plain"))
+
+    # HTML part with table
+    msg.attach(MIMEText(body_html, "html"))
 
     with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
         server.starttls()
@@ -174,12 +207,10 @@ def send_email(subject: str, body: str):
 
 def main():
     print("Scraping site...")
-    content = scrape_site()
-    print("Scrape result:\n")
-    # print(content)
+    content_html = scrape_site()
+    print("Scrape OK, sending email...")
 
-    # When you’re happy with scraping, uncomment to send email:
-    send_email("Daily IPO GMP Summary", content)
+    send_email("Daily IPO GMP Summary", content_html)
     print("Email sent to:")
     for r in RECIPIENT_EMAILS:
         print(" -", r)
