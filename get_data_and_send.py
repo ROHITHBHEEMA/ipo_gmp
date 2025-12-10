@@ -133,9 +133,9 @@ def scrape_site() -> str:
     html: List[str] = []
     html.append("<html><body>")
     html.append("<h2>IPO GMP Summary</h2>")
-    html.append(
-        f"<p>Source: <a href='{URL_TO_SCRAPE}'>{URL_TO_SCRAPE}</a></p>"
-    )
+    # html.append(
+    #     f"<p>Source: <a href='{URL_TO_SCRAPE}'>{URL_TO_SCRAPE}</a></p>"
+    # )
 
     for section_name, ipos in sections.items():
         html.append(f"<h3>{section_name}</h3>")
